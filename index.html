@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Potensic Atom 2 - Teljes Képernyős EOV Tervező</title>
+    <title>Potensic Atom 2 - EOV Térképes Tervező</title>
     <!-- Leaflet & Leaflet Draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
@@ -33,11 +33,11 @@
             z-index: 1000;
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(8px);
-            padding: 10px 14px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            padding: 12px 16px;
+            border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
             width: calc(100% - 24px);
-            max-width: 420px;
+            max-width: 440px;
         }
 
         .panel-grid {
@@ -47,43 +47,91 @@
             margin-bottom: 8px;
         }
 
+        .panel-field {
+            display: flex;
+            flex-direction: column;
+        }
+
         .panel-field label {
             font-size: 11px;
             font-weight: 700;
             color: #4a5568;
-            display: block;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
-        .panel-field input {
+        .panel-field input, .panel-field select {
             width: 100%;
-            padding: 6px 10px;
+            padding: 7px 10px;
             border: 1px solid #cbd5e0;
             border-radius: 6px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             color: #2d3748;
             background: #f8fafc;
         }
 
+        .angle-control {
+            margin-bottom: 10px;
+        }
+
+        .angle-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .angle-header label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #4a5568;
+            text-transform: uppercase;
+        }
+
+        .angle-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .angle-slider-container input[type="range"] {
+            flex-grow: 1;
+            height: 6px;
+            accent-color: #2563eb;
+        }
+
+        .angle-slider-container input[type="number"] {
+            width: 60px;
+            padding: 4px 6px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 13px;
+            text-align: center;
+            font-weight: 700;
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
         .btn-action {
-            width: 100%;
             background: #2563eb;
             color: white;
             border: none;
-            padding: 10px;
-            font-size: 14px;
+            padding: 9px;
+            font-size: 13px;
             font-weight: 700;
             border-radius: 8px;
             cursor: pointer;
             transition: background 0.2s ease;
-            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
         }
 
-        .btn-action:active {
-            background: #1d4ed8;
+        .btn-optimize {
+            background: #059669;
         }
 
         /* Felugró Modal ablak */
@@ -104,8 +152,8 @@
             border-radius: 16px;
             padding: 20px;
             width: 100%;
-            max-width: 380px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            max-width: 390px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
             position: relative;
             animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -166,7 +214,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
         }
 
         .btn-drone { background: #0284c7; color: white; }
@@ -175,29 +222,54 @@
 </head>
 <body>
 
-    <!-- 100%-ban kitöltött műholdas térkép -->
+    <!-- Műholdas térkép -->
     <div id="map"></div>
 
-    <!-- Áttetsző lebegő felület a térkép tetején -->
+    <!-- Áttetsző lebegő felület -->
     <div class="floating-panel">
         <div class="panel-grid">
             <div class="panel-field">
-                <label for="altitude">Magasság (m)</label>
-                <input type="number" id="altitude" value="40" step="1">
+                <label for="mission_type">Küldetés típusa</label>
+                <select id="mission_type" onchange="onMissionTypeChange()">
+                    <option value="2D">2D Topográfia (Egyutas)</option>
+                    <option value="3D">3D Modell (Rácshálós)</option>
+                </select>
             </div>
             <div class="panel-field">
-                <label for="gimbal_pitch">Kamera szög (°)</label>
-                <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5">
+                <label for="altitude">Magasság (m)</label>
+                <input type="number" id="altitude" value="40" step="1" onchange="recalculateIfPolygonExists()">
             </div>
         </div>
-        <button class="btn-action" onclick="calculateFromPolygon()">Poligon Feldolgozása & Tervezés</button>
+
+        <div class="panel-grid">
+            <div class="panel-field">
+                <label for="gimbal_pitch">Kamera szög (°)</label>
+                <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5" onchange="recalculateIfPolygonExists()">
+            </div>
+            <div class="panel-field" style="justify-content: flex-end;">
+                <button class="btn-action btn-optimize" onclick="optimizeAngle()">Optimalizálás</button>
+            </div>
+        </div>
+
+        <!-- Elforgatás csúszka -->
+        <div class="angle-control">
+            <div class="angle-header">
+                <label for="rotation_angle">Útvonal Elforgatás (°)</label>
+            </div>
+            <div class="angle-slider-container">
+                <input type="range" id="rotation_slider" min="0" max="355" step="5" value="0" oninput="updateRotationFromSlider(this.value)">
+                <input type="number" id="rotation_angle" min="0" max="355" step="5" value="0" onchange="updateRotationFromInput(this.value)">
+            </div>
+        </div>
+
+        <button class="btn-action" style="width: 100%;" onclick="showResultsModal()">Részletek & Letöltés</button>
     </div>
 
     <!-- Eredmények POPUP (Modal) Ablak -->
     <div class="modal-overlay" id="resultModal">
         <div class="modal-card">
             <div class="modal-header">
-                <h3 class="modal-title">Repülési Eredmények</h3>
+                <h3 class="modal-title">Repülési & Fotó Adatok</h3>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
             
@@ -250,6 +322,7 @@
         let currentPolygonEOV = [];
         let calculatedWaypointsEOV = [];
         let calculatedGCPs = [];
+        let polygonCenterEOV = { X: 0, Y: 0 };
 
         map.on(L.Draw.Event.CREATED, function (e) {
             drawnItems.clearLayers();
@@ -262,144 +335,14 @@
                 let eovCoord = proj4("EPSG:4326", "EPSG:23700", [pt.lng, pt.lat]);
                 return { X: eovCoord[1], Y: eovCoord[0] };
             });
+
+            // Középpont kiszámítása
+            let sumX = 0, sumY = 0;
+            currentPolygonEOV.forEach(p => { sumX += p.X; sumY += p.Y; });
+            polygonCenterEOV = { X: sumX / currentPolygonEOV.length, Y: sumY / currentPolygonEOV.length };
+
+            calculateFromPolygon();
         });
 
-        function calculateFromPolygon() {
-            if (currentPolygonEOV.length < 3) {
-                alert("Előbb rajzolj ki egy területet a térképen a poligon vagy téglalap eszközzel!");
-                return;
-            }
-
-            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
-            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
-            
-            let fovRad = 79.4 * (Math.PI / 180);
-            let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
-            let groundHeight = groundWidth * (3.0 / 4.0);
-
-            let rowSpacing = groundWidth * (1.0 - 0.70);
-            let photoDistance = groundHeight * (1.0 - 0.80);
-            let maxSpeed = photoDistance / 2.0; 
-            let gsdCm = (groundWidth / 8064) * 100.0;
-
-            let xs = currentPolygonEOV.map(p => p.X);
-            let ys = currentPolygonEOV.map(p => p.Y);
-            let minX = Math.min(...xs), maxX = Math.max(...xs);
-            let minY = Math.min(...ys), maxY = Math.max(...ys);
-
-            let heightM = maxX - minX;
-            let rows = Math.max(1, Math.floor(heightM / rowSpacing));
-
-            calculatedWaypointsEOV = [];
-            let leafletFlightCoords = []; 
-            let index = 1;
-
-            for (let r = 0; r <= rows; r++) {
-                let currX = minX + (r * rowSpacing);
-                let yMin = (r % 2 === 0) ? minY : maxY;
-                let yMax = (r % 2 === 0) ? maxY : minY;
-
-                calculatedWaypointsEOV.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMin.toFixed(2)), altitude: altitude, gimbalPitch: pitch, action: "TAKE_PHOTO" });
-                let wgs1 = proj4("EPSG:23700", "EPSG:4326", [yMin, currX]);
-                leafletFlightCoords.push([wgs1[1], wgs1[0]]);
-
-                calculatedWaypointsEOV.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMax.toFixed(2)), altitude: altitude, gimbalPitch: pitch, action: "TAKE_PHOTO" });
-                let wgs2 = proj4("EPSG:23700", "EPSG:4326", [yMax, currX]);
-                leafletFlightCoords.push([wgs2[1], wgs2[0]]);
-            }
-
-            // --- ÚTVONAL HOSSZA ÉS REPÜLÉSI IDŐ SZÁMÍTÁSA ---
-            let totalDistanceMeters = 0;
-            for (let i = 0; i < calculatedWaypointsEOV.length - 1; i++) {
-                let wp1 = calculatedWaypointsEOV[i];
-                let wp2 = calculatedWaypointsEOV[i + 1];
-                let dx = wp2.x_eov - wp1.x_eov;
-                let dy = wp2.y_eov - wp1.y_eov;
-                totalDistanceMeters += Math.sqrt(dx * dx + dy * dy);
-            }
-
-            // Repülési idő másodpercben (Távolság / Sebesség) + fordulónként 3mp + felszállás/leszállás
-            let flightTimeSeconds = (totalDistanceMeters / maxSpeed) + (rows * 3) + 30;
-            let flightTimeMin = Math.floor(flightTimeSeconds / 60);
-            let flightTimeSec = Math.round(flightTimeSeconds % 60);
-
-            let distanceFormatted = totalDistanceMeters >= 1000 
-                ? `${(totalDistanceMeters / 1000).toFixed(2)} km` 
-                : `${Math.round(totalDistanceMeters)} m`;
-
-            // Térképes kirajzolás
-            flightPathGroup.clearLayers();
-            L.polyline(leafletFlightCoords, { color: '#ef4444', weight: 3, opacity: 0.8, dashArray: '5, 10' }).addTo(flightPathGroup);
-            
-            leafletFlightCoords.forEach((coord, i) => {
-                L.circleMarker(coord, {
-                    radius: 4, fillColor: "#ef4444", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.9
-                }).bindTooltip(`WP ${i+1}`).addTo(flightPathGroup);
-            });
-
-            calculatedGCPs = currentPolygonEOV.map((pt, i) => ({
-                ID: `GCP_${i+1}`, X: pt.X, Y: pt.Y, Z: 100.0
-            }));
-
-            // Értékek kiíratása
-            document.getElementById('output_text').innerHTML = `
-                • <b>Útvonal hossza:</b> ${distanceFormatted}<br>
-                • <b>Becsült repülési idő:</b> ${flightTimeMin} perc ${flightTimeSec} mp<br>
-                • <b>GSD felbontás:</b> ${gsdCm.toFixed(2)} cm/px<br>
-                • <b>Sorköz:</b> ${rowSpacing.toFixed(2)} m | <b>Max sebesség:</b> ${maxSpeed.toFixed(2)} m/s<br>
-                • <b>Waypointok:</b> ${calculatedWaypointsEOV.length} db | <b>GCP-k:</b> ${calculatedGCPs.length} db
-            `;
-            
-            document.getElementById('resultModal').style.display = 'flex';
-        }
-
-        function closeModal() {
-            document.getElementById('resultModal').style.display = 'none';
-        }
-
-        function downloadFile(content, fileName, contentType) {
-            let a = document.createElement("a");
-            let file = new Blob([content], {type: contentType});
-            a.href = URL.createObjectURL(file);
-            a.download = fileName;
-            a.click();
-        }
-
-        function downloadJSON() {
-            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
-            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
-            
-            let wgs84Waypoints = calculatedWaypointsEOV.map(wp => {
-                let lonLat = proj4("EPSG:23700", "EPSG:4326", [wp.y_eov, wp.x_eov]);
-                return {
-                    index: wp.index,
-                    longitude: Number(lonLat[0].toFixed(7)),
-                    latitude: Number(lonLat[1].toFixed(7)),
-                    altitude: wp.altitude,
-                    gimbalPitch: wp.gimbalPitch,
-                    action: wp.action
-                };
-            });
-
-            let mission = {
-                missionName: "Potensic_WGS84_Mission",
-                droneType: "Potensic Atom 2",
-                defaultAltitude: altitude,
-                defaultGimbalPitch: pitch,
-                totalWaypoints: wgs84Waypoints.length,
-                waypoints: wgs84Waypoints
-            };
-            
-            downloadFile(JSON.stringify(mission, null, 4), "potensic_mission_wgs84.json", "application/json");
-        }
-
-        function downloadGCP() {
-            let gcpText = "EPSG:23700\n";
-            calculatedGCPs.forEach(gcp => {
-                gcpText += `${gcp.X.toFixed(2)} ${gcp.Y.toFixed(2)} ${gcp.Z.toFixed(2)} 0 0 0 ${gcp.ID}\n`;
-            });
-            downloadFile(gcpText, "gcp_eov.txt", "text/plain");
-        }
-    </script>
-</body>
-</html>
+        function onMissionTypeChange() {
+            let mType = document.getElementById('mission
