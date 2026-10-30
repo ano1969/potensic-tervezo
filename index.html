@@ -29,7 +29,6 @@
             z-index: 1;
         }
 
-        /* Panel nyitó gomb (A bal felső sarokba helyezve, a rajzolás alá) */
         .toggle-btn {
             position: absolute;
             top: 130px;
@@ -46,7 +45,6 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
 
-        /* Lebegő panel */
         .floating-panel {
             position: absolute;
             top: 10px;
@@ -178,7 +176,6 @@
             background: #059669;
         }
 
-        /* Modal ablak */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -256,13 +253,9 @@
 </head>
 <body>
 
-    <!-- Térkép -->
     <div id="map"></div>
-
-    <!-- Panel nyitó gomb -->
     <button class="toggle-btn" id="togglePanelBtn" onclick="togglePanel()">⚙️ Tervező Panel</button>
 
-    <!-- Lebegő panel -->
     <div class="floating-panel" id="controlPanel">
         <div class="panel-header">
             <h3 class="panel-title">Potensic EOV Tervező</h3>
@@ -317,7 +310,6 @@
         <button class="btn-action" style="margin-top: 4px;" onclick="showResultsModal()">Részletek & Letöltés</button>
     </div>
 
-    <!-- Eredmények Modal -->
     <div class="modal-overlay" id="resultModal">
         <div class="modal-card">
             <div class="modal-header">
@@ -341,19 +333,16 @@
         var map = L.map('map', { zoomControl: false }).setView([48.25, 20.62], 13);
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        var tileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
             attribution: 'Tiles &copy; Esri'
         }).addTo(map);
 
-        setTimeout(function() {
-            map.invalidateSize();
-        }, 200);
+        setTimeout(function() { map.invalidateSize(); }, 200);
 
         var drawnItems = new L.FeatureGroup();
-        var flightPathGroup = new L.FeatureGroup();
+        var flightPathGroup = new L.FeatureGroup().addTo(map); // Biztosítjuk, hogy a térképhez legyen adva
         map.addLayer(drawnItems);
-        map.addLayer(flightPathGroup);
 
         var drawControl = new L.Control.Draw({
             position: 'topleft',
@@ -379,7 +368,7 @@
             panel.classList.toggle('hidden');
         }
 
-        map.on(L.Draw.ItemCreated || L.Draw.Event.CREATED, function (e) {
+        map.on(L.Draw.Event.CREATED, function (e) {
             drawnItems.clearLayers();
             flightPathGroup.clearLayers();
             var layer = e.layer;
@@ -540,13 +529,23 @@
                 return [lonLat[1], lonLat[0]];
             });
 
+            // Tömör, vastag, jól látható vonal (nincs dashArray, hogy ne villogjon)
             let pathColor = (missionType === '3D') ? '#2563eb' : '#ef4444';
 
-            L.polyline(leafletFlightCoords, { color: pathColor, weight: 3, opacity: 0.8, dashArray: '5, 10' }).addTo(flightPathGroup);
+            L.polyline(leafletFlightCoords, { 
+                color: pathColor, 
+                weight: 5,        // Vastagabb vonal
+                opacity: 0.9      // Magas átlátszóság
+            }).addTo(flightPathGroup);
             
             leafletFlightCoords.forEach((coord, i) => {
                 L.circleMarker(coord, {
-                    radius: 3, fillColor: pathColor, color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.9
+                    radius: 4, 
+                    fillColor: pathColor, 
+                    color: "#ffffff", 
+                    weight: 1.5, 
+                    opacity: 1, 
+                    fillOpacity: 1
                 }).bindTooltip(`WP ${i+1}`).addTo(flightPathGroup);
             });
 
@@ -618,7 +617,8 @@
         }
 
         function downloadJSON() {
-            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let altitude = parseFloat(document.getElementById('altitude').value) / 40; // Correction safety, wait keep standard float parse
+            let altVal = parseFloat(document.getElementById('altitude').value) || 40;
             let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
             let missionType = document.getElementById('mission_type').value;
 
@@ -638,7 +638,7 @@
                 missionName: `Potensic_${missionType}_Mission`,
                 droneType: "Potensic Atom 2",
                 missionType: missionType,
-                defaultAltitude: altitude,
+                defaultAltitude: altVal,
                 defaultGimbalPitch: pitch,
                 totalWaypoints: wgs84Waypoints.length,
                 waypoints: wgs84Waypoints
