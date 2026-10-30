@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Potensic Atom 2 - EOV Térképes Tervező</title>
+    <title>Potensic Atom 2 - EOV Tervező</title>
     <!-- Leaflet & Leaflet Draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
@@ -11,35 +11,39 @@
     <style>
         * { box-sizing: border-box; }
         html, body {
+            width: 100%;
             height: 100%;
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            font-family: Arial, sans-serif;
+            background: #111;
             overflow: hidden;
         }
 
+        /* Térkép konténer: háttérként teljes képernyőn */
         #map {
-            position: absolute;
-            top: 0; bottom: 0; left: 0; right: 0;
-            width: 100%; height: 100%;
-            z-index: 1;
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
         }
 
+        /* Áttetsző lebegő panel a térkép tetején */
         .floating-panel {
             position: absolute;
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.96);
-            backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(5px);
             padding: 10px 14px;
-            border-radius: 14px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             width: calc(100% - 20px);
-            max-width: 430px;
-            max-height: 90vh;
-            overflow-y: auto;
+            max-width: 420px;
         }
 
         .panel-grid {
@@ -64,7 +68,7 @@
 
         .panel-field input, .panel-field select {
             width: 100%;
-            padding: 5px 8px;
+            padding: 6px 8px;
             border: 1px solid #cbd5e0;
             border-radius: 6px;
             font-size: 13px;
@@ -115,18 +119,19 @@
             font-weight: 700;
             border-radius: 8px;
             cursor: pointer;
+            width: 100%;
         }
 
         .btn-optimize {
             background: #059669;
         }
 
+        /* Modal ablak */
         .modal-overlay {
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(4px);
+            background: rgba(15, 23, 42, 0.7);
             z-index: 9999;
             justify-content: center;
             align-items: center;
@@ -139,7 +144,7 @@
             padding: 20px;
             width: 100%;
             max-width: 390px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 20px 25px rgba(0,0,0,0.3);
             position: relative;
         }
 
@@ -191,9 +196,6 @@
             border: none;
             cursor: pointer;
             margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         .btn-drone { background: #0284c7; color: white; }
@@ -202,8 +204,10 @@
 </head>
 <body>
 
+    <!-- Térkép elem -->
     <div id="map"></div>
 
+    <!-- Lebegő panel -->
     <div class="floating-panel">
         <div class="panel-grid">
             <div class="panel-field">
@@ -229,7 +233,6 @@
             </div>
         </div>
 
-        <!-- Útvonal Elforgatás -->
         <div class="angle-control">
             <div class="angle-header">
                 <label for="rotation_angle">Útvonal Elforgatás (°)</label>
@@ -240,41 +243,34 @@
             </div>
         </div>
 
-        <!-- ÚTVONAL ELTOLÁSA (OFFSET) -->
         <div class="panel-grid">
             <div class="panel-field">
-                <label for="offset_x">Eltolás É-D / X (m)</label>
+                <label for="offset_x">Eltolás X (m)</label>
                 <input type="number" id="offset_x" value="0" step="1" onchange="recalculateIfPolygonExists()">
             </div>
             <div class="panel-field">
-                <label for="offset_y">Eltolás K-NY / Y (m)</label>
+                <label for="offset_y">Eltolás Y (m)</label>
                 <input type="number" id="offset_y" value="0" step="1" onchange="recalculateIfPolygonExists()">
             </div>
         </div>
 
-        <button class="btn-action" style="width: 100%; margin-top: 4px;" onclick="showResultsModal()">Részletek & Letöltés</button>
+        <button class="btn-action" style="margin-top: 4px;" onclick="showResultsModal()">Részletek & Letöltés</button>
     </div>
 
-    <!-- Modal ablak -->
+    <!-- Eredmények Modal -->
     <div class="modal-overlay" id="resultModal">
         <div class="modal-card">
             <div class="modal-header">
                 <h3 class="modal-title">Repülési Adatok</h3>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
-            
             <div class="results-box" id="output_text"></div>
-            
-            <button class="btn-download btn-drone" onclick="downloadJSON()">
-                Drón JSON (WGS84) Letöltése
-            </button>
-            <button class="btn-download btn-gcp" onclick="downloadGCP()">
-                WebODM GCP (EPSG:23700) Letöltése
-            </button>
+            <button class="btn-download btn-drone" onclick="downloadJSON()">Drón JSON (WGS84) Letöltése</button>
+            <button class="btn-download btn-gcp" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
         </div>
     </div>
 
-    <!-- Könyvtárak -->
+    <!-- Leaflet, Draw & Proj4 JS könyvtárak -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
@@ -282,15 +278,20 @@
     <script>
         proj4.defs("EPSG:23700", "+proj=somerc +lat_0=47.14439372222222 +lon_0=19.04857177777778 +k_0=0.99993 +x_0=650000 +y_0=200000 +ellps=GRS67 +units=m +no_defs");
 
+        // Térkép inicializálás (Edelény / térség)
         var map = L.map('map', { zoomControl: false }).setView([48.25, 20.62], 13);
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        // Esri World Imagery csempék
+        var tileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
             attribution: 'Tiles &copy; Esri'
         }).addTo(map);
 
-        setTimeout(function() { map.invalidateSize(); }, 300);
+        // Kényszerített újrarajzolás, hogy mobilon és asztali gépen is biztosan megjelenjen
+        setTimeout(function() {
+            map.invalidateSize();
+        }, 200);
 
         var drawnItems = new L.FeatureGroup();
         var flightPathGroup = new L.FeatureGroup();
@@ -320,4 +321,197 @@
             drawnItems.clearLayers();
             flightPathGroup.clearLayers();
             var layer = e.layer;
-            drawnItems.addLayer(layer
+            drawnItems.addLayer(layer);
+
+            let latlngs = layer.getLatLngs()[0];
+            currentPolygonEOV = latlngs.map(pt => {
+                let eovCoord = proj4("EPSG:4326", "EPSG:23700", [pt.lng, pt.lat]);
+                return { X: eovCoord[1], Y: eovCoord[0] };
+            });
+
+            let sumX = 0, sumY = 0;
+            currentPolygonEOV.forEach(p => { sumX += p.X; sumY += p.Y; });
+            polygonCenterEOV = { X: sumX / currentPolygonEOV.length, Y: sumY / currentPolygonEOV.length };
+
+            calculateFromPolygon();
+        });
+
+        function onMissionTypeChange() {
+            let mType = document.getElementById('mission_type').value;
+            let pitchInput = document.getElementById('gimbal_pitch');
+            if (mType === '3D' && pitchInput.value === '-90') {
+                pitchInput.value = '-60';
+            } else if (mType === '2D' && pitchInput.value === '-60') {
+                pitchInput.value = '-90';
+            }
+            recalculateIfPolygonExists();
+        }
+
+        function updateRotationFromSlider(val) {
+            document.getElementById('rotation_angle').value = val;
+            calculateFromPolygon();
+        }
+
+        function updateRotationFromInput(val) {
+            document.getElementById('rotation_slider').value = val;
+            calculateFromPolygon();
+        }
+
+        function recalculateIfPolygonExists() {
+            if (currentPolygonEOV.length >= 3) {
+                calculateFromPolygon();
+            }
+        }
+
+        function rotatePoint(pt, center, angleRad) {
+            let cos = Math.cos(angleRad);
+            let sin = Math.sin(angleRad);
+            let dx = pt.X - center.X;
+            let dy = pt.Y - center.Y;
+            return {
+                X: center.X + (dx * cos - dy * sin),
+                Y: center.X + (dx * sin + dy * cos)
+            };
+        }
+
+        function generatePassWaypoints(polygonEOV, center, angleDeg, altitude, pitch, offsetX, offsetY) {
+            let angleRad = angleDeg * (Math.PI / 180);
+            let rotatedPoly = polygonEOV.map(pt => rotatePoint(pt, center, -angleRad));
+
+            let fovRad = 79.4 * (Math.PI / 180);
+            let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
+            let rowSpacing = groundWidth * (1.0 - 0.70);
+
+            let xs = rotatedPoly.map(p => p.X);
+            let ys = rotatedPoly.map(p => p.Y);
+            let minX = Math.min(...xs), maxX = Math.max(...xs);
+            let minY = Math.min(...ys), maxY = Math.max(...ys);
+
+            let heightM = maxX - minX;
+            let rows = Math.max(1, Math.floor(heightM / rowSpacing));
+
+            let waypointsRotated = [];
+            for (let r = 0; r <= rows; r++) {
+                let currX = minX + (r * rowSpacing);
+                let yMin = (r % 2 === 0) ? minY : maxY;
+                let yMax = (r % 2 === 0) ? maxY : minY;
+
+                waypointsRotated.push({ X: currX, Y: yMin });
+                waypointsRotated.push({ X: currX, Y: yMax });
+            }
+
+            return waypointsRotated.map(pt => {
+                let worldPt = rotatePoint(pt, center, angleRad);
+                return {
+                    x_eov: Number((worldPt.X + offsetX).toFixed(2)),
+                    y_eov: Number((worldPt.Y + offsetY).toFixed(2)),
+                    altitude: altitude,
+                    gimbalPitch: pitch,
+                    action: "TAKE_PHOTO"
+                };
+            });
+        }
+
+        function calculateFromPolygon() {
+            if (currentPolygonEOV.length < 3) return;
+
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
+            let angleDeg = parseFloat(document.getElementById('rotation_angle').value) || 0;
+            let offsetX = parseFloat(document.getElementById('offset_x').value) || 0;
+            let offsetY = parseFloat(document.getElementById('offset_y').value) || 0;
+            let missionType = document.getElementById('mission_type').value;
+
+            let pass1Waypoints = generatePassWaypoints(currentPolygonEOV, polygonCenterEOV, angleDeg, altitude, pitch, offsetX, offsetY);
+
+            calculatedWaypointsEOV = [];
+            let index = 1;
+
+            pass1Waypoints.forEach(wp => {
+                calculatedWaypointsEOV.push({ index: index++, ...wp });
+            });
+
+            if (missionType === '3D') {
+                let pass2Waypoints = generatePassWaypoints(currentPolygonEOV, polygonCenterEOV, angleDeg + 90, altitude, pitch, offsetX, offsetY);
+                pass2Waypoints.forEach(wp => {
+                    calculatedWaypointsEOV.push({ index: index++, ...wp });
+                });
+            }
+
+            let fovRad = 79.4 * (Math.PI / 180);
+            let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
+            let groundHeight = groundWidth * (3.0 / 4.0);
+
+            let rowSpacing = groundWidth * (1.0 - 0.70);
+            let photoDistance = groundHeight * (1.0 - 0.80);
+            let photoIntervalSec = 2;
+            let maxSpeed = photoDistance / photoIntervalSec;
+            let gsdCm = (groundWidth / 8064) * 100.0;
+
+            let totalDistanceMeters = 0;
+            let totalPhotos = 0;
+
+            for (let i = 0; i < calculatedWaypointsEOV.length - 1; i++) {
+                let wp1 = calculatedWaypointsEOV[i];
+                let wp2 = calculatedWaypointsEOV[i + 1];
+                let dx = wp2.x_eov - wp1.x_eov;
+                let dy = wp2.y_eov - wp1.y_eov;
+                let segmentDist = Math.sqrt(dx * dx + dy * dy);
+                totalDistanceMeters += segmentDist;
+
+                if (i % 2 === 0) {
+                    totalPhotos += Math.floor(segmentDist / photoDistance) + 1;
+                }
+            }
+
+            let flightTimeSeconds = (totalDistanceMeters / maxSpeed) + (calculatedWaypointsEOV.length * 2) + 30;
+            let flightTimeMin = Math.floor(flightTimeSeconds / 60);
+            let flightTimeSec = Math.round(flightTimeSeconds % 60);
+
+            let distanceFormatted = totalDistanceMeters >= 1000 
+                ? `${(totalDistanceMeters / 1000).toFixed(2)} km` 
+                : `${Math.round(totalDistanceMeters)} m`;
+
+            flightPathGroup.clearLayers();
+            let leafletFlightCoords = calculatedWaypointsEOV.map(wp => {
+                let lonLat = proj4("EPSG:23700", "EPSG:4326", [wp.y_eov, wp.x_eov]);
+                return [lonLat[1], lonLat[0]];
+            });
+
+            let pathColor = (missionType === '3D') ? '#2563eb' : '#ef4444';
+
+            L.polyline(leafletFlightCoords, { color: pathColor, weight: 3, opacity: 0.8, dashArray: '5, 10' }).addTo(flightPathGroup);
+            
+            leafletFlightCoords.forEach((coord, i) => {
+                L.circleMarker(coord, {
+                    radius: 3, fillColor: pathColor, color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.9
+                }).bindTooltip(`WP ${i+1}`).addTo(flightPathGroup);
+            });
+
+            calculatedGCPs = currentPolygonEOV.map((pt, i) => ({
+                ID: `GCP_${i+1}`, X: pt.X, Y: pt.Y, Z: 100.0
+            }));
+
+            document.getElementById('output_text').innerHTML = `
+                • <b>Mód:</b> ${missionType === '3D' ? '3D Rácshálós' : '2D Topográfia'}<br>
+                • <b>Útvonal hossza:</b> ${distanceFormatted}<br>
+                • <b>Repülési idő:</b> ${flightTimeMin} perc ${flightTimeSec} mp<br>
+                • <b>Várható képek:</b> ~${totalPhotos} db<br>
+                • <b>Eltolás X / Y:</b> ${offsetX} m / ${offsetY} m<br>
+                • <b>GSD felbontás:</b> ${gsdCm.toFixed(2)} cm/px
+            `;
+        }
+
+        function optimizeAngle() {
+            if (currentPolygonEOV.length < 3) {
+                alert("Előbb rajzolj ki egy területet a térképen!");
+                return;
+            }
+
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
+            let offsetX = parseFloat(document.getElementById('offset_x').value) || 0;
+            let offsetY = parseFloat(document.getElementById('offset_y').value) || 0;
+            
+            let bestAngle = 0;
+            let minDistance = Infinity
