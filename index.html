@@ -11,43 +11,76 @@
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f6f9; }
         h2 { color: #2c3e50; text-align: center; font-size: 18px; margin: 5px 0 10px 0; }
-        #map { width: 100%; height: 50vh; border-radius: 8px; border: 2px solid #ccc; z-index: 1; }
-        .card { background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 10px; }
-        .grid-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        label { font-weight: bold; font-size: 13px; display: block; margin-top: 5px; }
-        input[type="number"] { width: 100%; padding: 8px; margin-top: 3px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        button { width: 100%; background-color: #28a745; color: white; border: none; padding: 12px; font-size: 15px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 10px; }
-        button.btn-secondary { background-color: #007bff; }
-        .results { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 8px; font-size: 13px; margin-top: 8px; line-height: 1.5; }
+        #map { width: 100%; height: 72vh; border-radius: 8px; border: 2px solid #ccc; z-index: 1; }
+        .card { background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 8px; }
+        .grid-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        label { font-weight: bold; font-size: 12px; display: block; margin-top: 3px; }
+        input[type="number"] { width: 100%; padding: 6px; margin-top: 2px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 14px; }
+        button { width: 100%; background-color: #28a745; color: white; border: none; padding: 10px; font-size: 14px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 8px; }
+        button.btn-secondary { background-color: #007bff; margin-top: 6px; }
+        
+        /* Popup / Modal stílusok */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .modal-close {
+            position: absolute;
+            top: 10px; right: 15px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #aaa;
+        }
+        .modal-close:hover { color: #000; }
+        .results { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 10px; font-size: 13px; margin: 10px 0; line-height: 1.5; }
     </style>
 </head>
 <body>
 
-    <h2>Potensic Atom 2 - Térképes EOV Tervező</h2>
+    <h2>Potensic Atom 2 - Tervező</h2>
     
-    <!-- Térkép ablak -->
+    <!-- Térkép ablak (nagyobb felület) -->
     <div id="map"></div>
 
     <div class="card">
         <div class="grid-inputs">
             <div>
-                <label for="altitude">Repülési Magasság (m):</label>
+                <label for="altitude">Magasság (m):</label>
                 <input type="number" id="altitude" value="40" step="1">
             </div>
             <div>
-                <label for="gimbal_pitch">Kamera dőlésszög (°):</label>
+                <label for="gimbal_pitch">Kamera szög (°):</label>
                 <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5">
             </div>
         </div>
         
-        <button onclick="calculateFromPolygon()">Poligon Feldolgozása & Útvonal Kirajzolása</button>
+        <button onclick="calculateFromPolygon()">Poligon Feldolgozása & Tervezés</button>
     </div>
 
-    <div class="card" id="result_card" style="display:none;">
-        <h3 style="font-size:15px; margin:0 0 5px 0;">Számítási Eredmények</h3>
-        <div class="results" id="output_text"></div>
-        <button class="btn-secondary" onclick="downloadJSON()">Drón JSON (WGS84) Letöltése</button>
-        <button class="btn-secondary" style="background-color: #6c757d; margin-top: 5px;" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
+    <!-- Eredmények POPUP (Modal) Ablak -->
+    <div class="modal-overlay" id="resultModal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeModal()">&times;</span>
+            <h3 style="margin-top:0; font-size:16px; color:#2c3e50;">Számítási Eredmények</h3>
+            <div class="results" id="output_text"></div>
+            <button class="btn-secondary" onclick="downloadJSON()">Drón JSON (WGS84) Letöltése</button>
+            <button class="btn-secondary" style="background-color: #6c757d;" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
+        </div>
     </div>
 
     <!-- Leaflet, Draw & Proj4 JS könyvtárak -->
@@ -56,13 +89,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
 
     <script>
-        // EOV (EPSG:23700) definíció Proj4js-hez
         proj4.defs("EPSG:23700", "+proj=somerc +lat_0=47.14439372222222 +lon_0=19.04857177777778 +k_0=0.99993 +x_0=650000 +y_0=200000 +ellps=GRS67 +units=m +no_defs");
 
-        // Térkép inicializálása (Borsod / Kazincbarcika - Edelény térsége)
         var map = L.map('map').setView([48.25, 20.62], 13);
 
-        // Esri Műholdas réteg
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
             attribution: 'Tiles &copy; Esri'
@@ -97,8 +127,6 @@
             drawnItems.addLayer(layer);
 
             let latlngs = layer.getLatLngs()[0];
-            
-            // WGS84 -> EOV átszámítás (EPSG:23700)
             currentPolygonEOV = latlngs.map(pt => {
                 let eovCoord = proj4("EPSG:4326", "EPSG:23700", [pt.lng, pt.lat]);
                 return { X: eovCoord[1], Y: eovCoord[0] };
@@ -114,13 +142,12 @@
             let altitude = parseFloat(document.getElementById('altitude').value) || 40;
             let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
             
-            // Potensic Atom 2 optika (79.4° FOV, min 2 mp képköz)
             let fovRad = 79.4 * (Math.PI / 180);
             let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
             let groundHeight = groundWidth * (3.0 / 4.0);
 
-            let rowSpacing = groundWidth * (1.0 - 0.70); // 70% oldalátfedés
-            let photoDistance = groundHeight * (1.0 - 0.80); // 80% előrevezető átfedés
+            let rowSpacing = groundWidth * (1.0 - 0.70);
+            let photoDistance = groundHeight * (1.0 - 0.80);
             let maxSpeed = photoDistance / 2.0; 
             let gsdCm = (groundWidth / 8064) * 100.0;
 
@@ -133,7 +160,7 @@
             let rows = Math.max(1, Math.floor(heightM / rowSpacing));
 
             calculatedWaypointsEOV = [];
-            let leafletFlightCoords = []; // WGS84 pontok a térképes kirajzoláshoz
+            let leafletFlightCoords = []; 
             let index = 1;
 
             for (let r = 0; r <= rows; r++) {
@@ -141,12 +168,86 @@
                 let yMin = (r % 2 === 0) ? minY : maxY;
                 let yMax = (r % 2 === 0) ? maxY : minY;
 
-                // 1. Waypoint (sor eleje)
                 calculatedWaypointsEOV.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMin.toFixed(2)), altitude: altitude, gimbalPitch: pitch, action: "TAKE_PHOTO" });
                 let wgs1 = proj4("EPSG:23700", "EPSG:4326", [yMin, currX]);
                 leafletFlightCoords.push([wgs1[1], wgs1[0]]);
 
-                // 2. Waypoint (sor vége)
                 calculatedWaypointsEOV.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMax.toFixed(2)), altitude: altitude, gimbalPitch: pitch, action: "TAKE_PHOTO" });
                 let wgs2 = proj4("EPSG:23700", "EPSG:4326", [yMax, currX]);
-                leafletFlightCoords.push([wgs2[1], wgs2
+                leafletFlightCoords.push([wgs2[1], wgs2[0]]);
+            }
+
+            flightPathGroup.clearLayers();
+            L.polyline(leafletFlightCoords, { color: 'red', weight: 3, opacity: 0.8, dashArray: '5, 10' }).addTo(flightPathGroup);
+            
+            leafletFlightCoords.forEach((coord, i) => {
+                L.circleMarker(coord, {
+                    radius: 4, fillColor: "#ff0000", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.9
+                }).bindTooltip(`WP ${i+1}`).addTo(flightPathGroup);
+            });
+
+            calculatedGCPs = currentPolygonEOV.map((pt, i) => ({
+                ID: `GCP_${i+1}`, X: pt.X, Y: pt.Y, Z: 100.0
+            }));
+
+            document.getElementById('output_text').innerHTML = `
+                • <b>GSD felbontás:</b> ${gsdCm.toFixed(2)} cm/px<br>
+                • <b>Sorköz:</b> ${rowSpacing.toFixed(2)} m | <b>Max sebesség:</b> ${maxSpeed.toFixed(2)} m/s<br>
+                • <b>Kamera szög:</b> ${pitch}°<br>
+                • <b>Waypointok:</b> ${calculatedWaypointsEOV.length} db | <b>GCP-k:</b> ${calculatedGCPs.length} db
+            `;
+            
+            // Popup ablak megjelenítése
+            document.getElementById('resultModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('resultModal').style.display = 'none';
+        }
+
+        function downloadFile(content, fileName, contentType) {
+            let a = document.createElement("a");
+            let file = new Blob([content], {type: contentType});
+            a.href = URL.createObjectURL(file);
+            a.download = fileName;
+            a.click();
+        }
+
+        function downloadJSON() {
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
+            
+            let wgs84Waypoints = calculatedWaypointsEOV.map(wp => {
+                let lonLat = proj4("EPSG:23700", "EPSG:4326", [wp.y_eov, wp.x_eov]);
+                return {
+                    index: wp.index,
+                    longitude: Number(lonLat[0].toFixed(7)),
+                    latitude: Number(lonLat[1].toFixed(7)),
+                    altitude: wp.altitude,
+                    gimbalPitch: wp.gimbalPitch,
+                    action: wp.action
+                };
+            });
+
+            let mission = {
+                missionName: "Potensic_WGS84_Mission",
+                droneType: "Potensic Atom 2",
+                defaultAltitude: altitude,
+                defaultGimbalPitch: pitch,
+                totalWaypoints: wgs84Waypoints.length,
+                waypoints: wgs84Waypoints
+            };
+            
+            downloadFile(JSON.stringify(mission, null, 4), "potensic_mission_wgs84.json", "application/json");
+        }
+
+        function downloadGCP() {
+            let gcpText = "EPSG:23700\n";
+            calculatedGCPs.forEach(gcp => {
+                gcpText += `${gcp.X.toFixed(2)} ${gcp.Y.toFixed(2)} ${gcp.Z.toFixed(2)} 0 0 0 ${gcp.ID}\n`;
+            });
+            downloadFile(gcpText, "gcp_eov.txt", "text/plain");
+        }
+    </script>
+</body>
+</html>
