@@ -2,84 +2,213 @@
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Potensic Atom 2 - EOV Térképes Tervező</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Potensic Atom 2 - Teljes Képernyős EOV Tervező</title>
     <!-- Leaflet & Leaflet Draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f6f9; }
-        h2 { color: #2c3e50; text-align: center; font-size: 18px; margin: 5px 0 10px 0; }
-        #map { width: 100%; height: 72vh; border-radius: 8px; border: 2px solid #ccc; z-index: 1; }
-        .card { background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 8px; }
-        .grid-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        label { font-weight: bold; font-size: 12px; display: block; margin-top: 3px; }
-        input[type="number"] { width: 100%; padding: 6px; margin-top: 2px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 14px; }
-        button { width: 100%; background-color: #28a745; color: white; border: none; padding: 10px; font-size: 14px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 8px; }
-        button.btn-secondary { background-color: #007bff; margin-top: 6px; }
-        
-        /* Popup / Modal stílusok */
+        * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        /* Áttetsző lebegő panel a térkép tetején */
+        .floating-panel {
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            padding: 10px 14px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            width: calc(100% - 24px);
+            max-width: 420px;
+        }
+
+        .panel-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .panel-field label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #4a5568;
+            display: block;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .panel-field input {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #2d3748;
+            background: #f8fafc;
+        }
+
+        .btn-action {
+            width: 100%;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-action:active {
+            background: #1d4ed8;
+        }
+
+        /* Felugró Modal ablak */
         .modal-overlay {
             display: none;
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5);
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(4px);
             z-index: 9999;
             justify-content: center;
             align-items: center;
+            padding: 16px;
         }
-        .modal-content {
-            background: #fff;
+
+        .modal-card {
+            background: #ffffff;
+            border-radius: 16px;
             padding: 20px;
-            border-radius: 10px;
-            width: 90%;
-            max-width: 400px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 380px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
             position: relative;
+            animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
+
+        @keyframes popIn {
+            from { opacity: 0; transform: scale(0.92); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #1e293b;
+            margin: 0;
+        }
+
         .modal-close {
-            position: absolute;
-            top: 10px; right: 15px;
-            font-size: 20px;
+            background: #f1f5f9;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
             font-weight: bold;
+            color: #64748b;
             cursor: pointer;
-            color: #aaa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .modal-close:hover { color: #000; }
-        .results { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 10px; font-size: 13px; margin: 10px 0; line-height: 1.5; }
+
+        .results-box {
+            background: #f0f9ff;
+            border-left: 4px solid #0284c7;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #0369a1;
+            margin-bottom: 16px;
+        }
+
+        .btn-download {
+            width: 100%;
+            padding: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-drone { background: #0284c7; color: white; }
+        .btn-gcp { background: #475569; color: white; }
     </style>
 </head>
 <body>
 
-    <h2>Potensic Atom 2 - Tervező</h2>
-    
-    <!-- Térkép ablak (nagyobb felület) -->
+    <!-- 100%-ban kitöltött műholdas térkép -->
     <div id="map"></div>
 
-    <div class="card">
-        <div class="grid-inputs">
-            <div>
-                <label for="altitude">Magasság (m):</label>
+    <!-- Áttetsző lebegő felület a térkép tetején -->
+    <div class="floating-panel">
+        <div class="panel-grid">
+            <div class="panel-field">
+                <label for="altitude">Magasság (m)</label>
                 <input type="number" id="altitude" value="40" step="1">
             </div>
-            <div>
-                <label for="gimbal_pitch">Kamera szög (°):</label>
+            <div class="panel-field">
+                <label for="gimbal_pitch">Kamera szög (°)</label>
                 <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5">
             </div>
         </div>
-        
-        <button onclick="calculateFromPolygon()">Poligon Feldolgozása & Tervezés</button>
+        <button class="btn-action" onclick="calculateFromPolygon()">Poligon Feldolgozása & Tervezés</button>
     </div>
 
     <!-- Eredmények POPUP (Modal) Ablak -->
     <div class="modal-overlay" id="resultModal">
-        <div class="modal-content">
-            <span class="modal-close" onclick="closeModal()">&times;</span>
-            <h3 style="margin-top:0; font-size:16px; color:#2c3e50;">Számítási Eredmények</h3>
-            <div class="results" id="output_text"></div>
-            <button class="btn-secondary" onclick="downloadJSON()">Drón JSON (WGS84) Letöltése</button>
-            <button class="btn-secondary" style="background-color: #6c757d;" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 class="modal-title">Repülési Eredmények</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            
+            <div class="results-box" id="output_text"></div>
+            
+            <button class="btn-download btn-drone" onclick="downloadJSON()">
+                Drón JSON (WGS84) Letöltése
+            </button>
+            <button class="btn-download btn-gcp" onclick="downloadGCP()">
+                WebODM GCP (EPSG:23700) Letöltése
+            </button>
         </div>
     </div>
 
@@ -91,7 +220,8 @@
     <script>
         proj4.defs("EPSG:23700", "+proj=somerc +lat_0=47.14439372222222 +lon_0=19.04857177777778 +k_0=0.99993 +x_0=650000 +y_0=200000 +ellps=GRS67 +units=m +no_defs");
 
-        var map = L.map('map').setView([48.25, 20.62], 13);
+        var map = L.map('map', { zoomControl: false }).setView([48.25, 20.62], 13);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
 
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 19,
@@ -104,6 +234,7 @@
         map.addLayer(flightPathGroup);
 
         var drawControl = new L.Control.Draw({
+            position: 'topleft',
             edit: { featureGroup: drawnItems },
             draw: {
                 polygon: true,
@@ -177,12 +308,32 @@
                 leafletFlightCoords.push([wgs2[1], wgs2[0]]);
             }
 
+            // --- ÚTVONAL HOSSZA ÉS REPÜLÉSI IDŐ SZÁMÍTÁSA ---
+            let totalDistanceMeters = 0;
+            for (let i = 0; i < calculatedWaypointsEOV.length - 1; i++) {
+                let wp1 = calculatedWaypointsEOV[i];
+                let wp2 = calculatedWaypointsEOV[i + 1];
+                let dx = wp2.x_eov - wp1.x_eov;
+                let dy = wp2.y_eov - wp1.y_eov;
+                totalDistanceMeters += Math.sqrt(dx * dx + dy * dy);
+            }
+
+            // Repülési idő másodpercben (Távolság / Sebesség) + fordulónként 3mp + felszállás/leszállás
+            let flightTimeSeconds = (totalDistanceMeters / maxSpeed) + (rows * 3) + 30;
+            let flightTimeMin = Math.floor(flightTimeSeconds / 60);
+            let flightTimeSec = Math.round(flightTimeSeconds % 60);
+
+            let distanceFormatted = totalDistanceMeters >= 1000 
+                ? `${(totalDistanceMeters / 1000).toFixed(2)} km` 
+                : `${Math.round(totalDistanceMeters)} m`;
+
+            // Térképes kirajzolás
             flightPathGroup.clearLayers();
-            L.polyline(leafletFlightCoords, { color: 'red', weight: 3, opacity: 0.8, dashArray: '5, 10' }).addTo(flightPathGroup);
+            L.polyline(leafletFlightCoords, { color: '#ef4444', weight: 3, opacity: 0.8, dashArray: '5, 10' }).addTo(flightPathGroup);
             
             leafletFlightCoords.forEach((coord, i) => {
                 L.circleMarker(coord, {
-                    radius: 4, fillColor: "#ff0000", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.9
+                    radius: 4, fillColor: "#ef4444", color: "#ffffff", weight: 1, opacity: 1, fillOpacity: 0.9
                 }).bindTooltip(`WP ${i+1}`).addTo(flightPathGroup);
             });
 
@@ -190,14 +341,15 @@
                 ID: `GCP_${i+1}`, X: pt.X, Y: pt.Y, Z: 100.0
             }));
 
+            // Értékek kiíratása
             document.getElementById('output_text').innerHTML = `
+                • <b>Útvonal hossza:</b> ${distanceFormatted}<br>
+                • <b>Becsült repülési idő:</b> ${flightTimeMin} perc ${flightTimeSec} mp<br>
                 • <b>GSD felbontás:</b> ${gsdCm.toFixed(2)} cm/px<br>
                 • <b>Sorköz:</b> ${rowSpacing.toFixed(2)} m | <b>Max sebesség:</b> ${maxSpeed.toFixed(2)} m/s<br>
-                • <b>Kamera szög:</b> ${pitch}°<br>
                 • <b>Waypointok:</b> ${calculatedWaypointsEOV.length} db | <b>GCP-k:</b> ${calculatedGCPs.length} db
             `;
             
-            // Popup ablak megjelenítése
             document.getElementById('resultModal').style.display = 'flex';
         }
 
