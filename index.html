@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -12,13 +11,14 @@
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f6f9; }
         h2 { color: #2c3e50; text-align: center; font-size: 18px; margin: 5px 0 10px 0; }
-        #map { width: 100%; height: 45vh; border-radius: 8px; border: 2px solid #ccc; z-index: 1; }
-        .card { background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 10px; }
+        #map { width: 100%; height: 50vh; border-radius: 8px; border: 2px solid #ccc; z-index: 1; }
+        .card { background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 10px; }
+        .grid-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         label { font-weight: bold; font-size: 13px; display: block; margin-top: 5px; }
         input[type="number"] { width: 100%; padding: 8px; margin-top: 3px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        button { width: 100%; background-color: #28a745; color: white; border: none; padding: 10px; font-size: 15px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 8px; }
+        button { width: 100%; background-color: #28a745; color: white; border: none; padding: 12px; font-size: 15px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 10px; }
         button.btn-secondary { background-color: #007bff; }
-        .results { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 8px; font-size: 13px; margin-top: 8px; line-height: 1.4; }
+        .results { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 8px; font-size: 13px; margin-top: 8px; line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -29,16 +29,24 @@
     <div id="map"></div>
 
     <div class="card">
-        <label>Repülési Magasság (m):</label>
-        <input type="number" id="altitude" value="40" step="1">
+        <div class="grid-inputs">
+            <div>
+                <label for="altitude">Repülési Magasság (m):</label>
+                <input type="number" id="altitude" value="40" step="1">
+            </div>
+            <div>
+                <label for="gimbal_pitch">Kamera dőlésszög (°):</label>
+                <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5">
+            </div>
+        </div>
         
-        <button onclick="calculateFromPolygon()">Poligon Feldolgozása & Tervezés</button>
+        <button onclick="calculateFromPolygon()">Poligon Feldolgozása & Útvonal Kirajzolása</button>
     </div>
 
     <div class="card" id="result_card" style="display:none;">
         <h3 style="font-size:15px; margin:0 0 5px 0;">Számítási Eredmények</h3>
         <div class="results" id="output_text"></div>
-        <button class="btn-secondary" onclick="downloadJSON()">Drón JSON Fájl Letöltése</button>
+        <button class="btn-secondary" onclick="downloadJSON()">Drón JSON (WGS84) Letöltése</button>
         <button class="btn-secondary" style="background-color: #6c757d; margin-top: 5px;" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
     </div>
 
@@ -61,7 +69,9 @@
         }).addTo(map);
 
         var drawnItems = new L.FeatureGroup();
+        var flightPathGroup = new L.FeatureGroup();
         map.addLayer(drawnItems);
+        map.addLayer(flightPathGroup);
 
         var drawControl = new L.Control.Draw({
             edit: { featureGroup: drawnItems },
@@ -77,11 +87,12 @@
         map.addControl(drawControl);
 
         let currentPolygonEOV = [];
-        let calculatedWaypoints = [];
+        let calculatedWaypointsEOV = [];
         let calculatedGCPs = [];
 
         map.on(L.Draw.Event.CREATED, function (e) {
             drawnItems.clearLayers();
+            flightPathGroup.clearLayers();
             var layer = e.layer;
             drawnItems.addLayer(layer);
 
@@ -92,8 +103,6 @@
                 let eovCoord = proj4("EPSG:4326", "EPSG:23700", [pt.lng, pt.lat]);
                 return { X: eovCoord[1], Y: eovCoord[0] };
             });
-
-            alert(`Poligon rögzítve! ${currentPolygonEOV.length} töréspont sikeresen átszámítva EOV-ba.`);
         });
 
         function calculateFromPolygon() {
@@ -103,6 +112,7 @@
             }
 
             let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
             
             // Potensic Atom 2 optika (79.4° FOV, min 2 mp képköz)
             let fovRad = 79.4 * (Math.PI / 180);
@@ -120,10 +130,10 @@
             let minY = Math.min(...ys), maxY = Math.max(...ys);
 
             let heightM = maxX - minX;
-            let widthM = maxY - minY;
             let rows = Math.max(1, Math.floor(heightM / rowSpacing));
 
-            calculatedWaypoints = [];
+            calculatedWaypointsEOV = [];
+            let leafletFlightCoords = []; // WGS84 pontok a térképes kirajzoláshoz
             let index = 1;
 
             for (let r = 0; r <= rows; r++) {
@@ -131,49 +141,12 @@
                 let yMin = (r % 2 === 0) ? minY : maxY;
                 let yMax = (r % 2 === 0) ? maxY : minY;
 
-                calculatedWaypoints.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMin.toFixed(2)), altitude: altitude, gimbalPitch: -90.0, action: "TAKE_PHOTO" });
-                calculatedWaypoints.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMax.toFixed(2)), altitude: altitude, gimbalPitch: -90.0, action: "TAKE_PHOTO" });
-            }
+                // 1. Waypoint (sor eleje)
+                calculatedWaypointsEOV.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMin.toFixed(2)), altitude: altitude, gimbalPitch: pitch, action: "TAKE_PHOTO" });
+                let wgs1 = proj4("EPSG:23700", "EPSG:4326", [yMin, currX]);
+                leafletFlightCoords.push([wgs1[1], wgs1[0]]);
 
-            calculatedGCPs = currentPolygonEOV.map((pt, i) => ({
-                ID: `GCP_${i+1}`, X: pt.X, Y: pt.Y, Z: 100.0
-            }));
-
-            document.getElementById('output_text').innerHTML = `
-                • <b>GSD felbontás:</b> ${gsdCm.toFixed(2)} cm/px<br>
-                • <b>Sorköz:</b> ${rowSpacing.toFixed(2)} m | <b>Max sebesség:</b> ${maxSpeed.toFixed(2)} m/s<br>
-                • <b>Waypointok:</b> ${calculatedWaypoints.length} db | <b>GCP-k:</b> ${calculatedGCPs.length} db
-            `;
-            document.getElementById('result_card').style.display = 'block';
-        }
-
-        function downloadFile(content, fileName, contentType) {
-            let a = document.createElement("a");
-            let file = new Blob([content], {type: contentType});
-            a.href = URL.createObjectURL(file);
-            a.download = fileName;
-            a.click();
-        }
-
-        function downloadJSON() {
-            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
-            let mission = {
-                missionName: "Potensic_Map_Polygon",
-                droneType: "Potensic Atom 2",
-                defaultAltitude: altitude,
-                totalWaypoints: calculatedWaypoints.length,
-                waypoints: calculatedWaypoints
-            };
-            downloadFile(JSON.stringify(mission, null, 4), "potensic_mission.json", "application/json");
-        }
-
-        function downloadGCP() {
-            let gcpText = "EPSG:23700\n";
-            calculatedGCPs.forEach(gcp => {
-                gcpText += `${gcp.X.toFixed(2)} ${gcp.Y.toFixed(2)} ${gcp.Z.toFixed(2)} 0 0 0 ${gcp.ID}\n`;
-            });
-            downloadFile(gcpText, "gcp_eov.txt", "text/plain");
-        }
-    </script>
-</body>
-</html>
+                // 2. Waypoint (sor vége)
+                calculatedWaypointsEOV.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMax.toFixed(2)), altitude: altitude, gimbalPitch: pitch, action: "TAKE_PHOTO" });
+                let wgs2 = proj4("EPSG:23700", "EPSG:4326", [yMax, currX]);
+                leafletFlightCoords.push([wgs2[1], wgs2
