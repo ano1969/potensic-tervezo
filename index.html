@@ -1,1 +1,179 @@
 
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potensic Atom 2 - EOV Térképes Tervező</title>
+    <!-- Leaflet & Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 10px; background: #f4f6f9; }
+        h2 { color: #2c3e50; text-align: center; font-size: 18px; margin: 5px 0 10px 0; }
+        #map { width: 100%; height: 45vh; border-radius: 8px; border: 2px solid #ccc; z-index: 1; }
+        .card { background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-top: 10px; }
+        label { font-weight: bold; font-size: 13px; display: block; margin-top: 5px; }
+        input[type="number"] { width: 100%; padding: 8px; margin-top: 3px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; background-color: #28a745; color: white; border: none; padding: 10px; font-size: 15px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 8px; }
+        button.btn-secondary { background-color: #007bff; }
+        .results { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 8px; font-size: 13px; margin-top: 8px; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+    <h2>Potensic Atom 2 - Térképes EOV Tervező</h2>
+    
+    <!-- Térkép ablak -->
+    <div id="map"></div>
+
+    <div class="card">
+        <label>Repülési Magasság (m):</label>
+        <input type="number" id="altitude" value="40" step="1">
+        
+        <button onclick="calculateFromPolygon()">Poligon Feldolgozása & Tervezés</button>
+    </div>
+
+    <div class="card" id="result_card" style="display:none;">
+        <h3 style="font-size:15px; margin:0 0 5px 0;">Számítási Eredmények</h3>
+        <div class="results" id="output_text"></div>
+        <button class="btn-secondary" onclick="downloadJSON()">Drón JSON Fájl Letöltése</button>
+        <button class="btn-secondary" style="background-color: #6c757d; margin-top: 5px;" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
+    </div>
+
+    <!-- Leaflet, Draw & Proj4 JS könyvtárak -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+
+    <script>
+        // EOV (EPSG:23700) definíció Proj4js-hez
+        proj4.defs("EPSG:23700", "+proj=somerc +lat_0=47.14439372222222 +lon_0=19.04857177777778 +k_0=0.99993 +x_0=650000 +y_0=200000 +ellps=GRS67 +units=m +no_defs");
+
+        // Térkép inicializálása (Borsod / Kazincbarcika - Edelény térsége)
+        var map = L.map('map').setView([48.25, 20.62], 13);
+
+        // Esri Műholdas réteg
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        var drawControl = new L.Control.Draw({
+            edit: { featureGroup: drawnItems },
+            draw: {
+                polygon: true,
+                rectangle: true,
+                polyline: false,
+                circle: false,
+                marker: false,
+                circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        let currentPolygonEOV = [];
+        let calculatedWaypoints = [];
+        let calculatedGCPs = [];
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            drawnItems.clearLayers();
+            var layer = e.layer;
+            drawnItems.addLayer(layer);
+
+            let latlngs = layer.getLatLngs()[0];
+            
+            // WGS84 -> EOV átszámítás (EPSG:23700)
+            currentPolygonEOV = latlngs.map(pt => {
+                let eovCoord = proj4("EPSG:4326", "EPSG:23700", [pt.lng, pt.lat]);
+                return { X: eovCoord[1], Y: eovCoord[0] };
+            });
+
+            alert(`Poligon rögzítve! ${currentPolygonEOV.length} töréspont sikeresen átszámítva EOV-ba.`);
+        });
+
+        function calculateFromPolygon() {
+            if (currentPolygonEOV.length < 3) {
+                alert("Előbb rajzolj ki egy területet a térképen a poligon vagy téglalap eszközzel!");
+                return;
+            }
+
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            
+            // Potensic Atom 2 optika (79.4° FOV, min 2 mp képköz)
+            let fovRad = 79.4 * (Math.PI / 180);
+            let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
+            let groundHeight = groundWidth * (3.0 / 4.0);
+
+            let rowSpacing = groundWidth * (1.0 - 0.70); // 70% oldalátfedés
+            let photoDistance = groundHeight * (1.0 - 0.80); // 80% előrevezető átfedés
+            let maxSpeed = photoDistance / 2.0; 
+            let gsdCm = (groundWidth / 8064) * 100.0;
+
+            let xs = currentPolygonEOV.map(p => p.X);
+            let ys = currentPolygonEOV.map(p => p.Y);
+            let minX = Math.min(...xs), maxX = Math.max(...xs);
+            let minY = Math.min(...ys), maxY = Math.max(...ys);
+
+            let heightM = maxX - minX;
+            let widthM = maxY - minY;
+            let rows = Math.max(1, Math.floor(heightM / rowSpacing));
+
+            calculatedWaypoints = [];
+            let index = 1;
+
+            for (let r = 0; r <= rows; r++) {
+                let currX = minX + (r * rowSpacing);
+                let yMin = (r % 2 === 0) ? minY : maxY;
+                let yMax = (r % 2 === 0) ? maxY : minY;
+
+                calculatedWaypoints.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMin.toFixed(2)), altitude: altitude, gimbalPitch: -90.0, action: "TAKE_PHOTO" });
+                calculatedWaypoints.push({ index: index++, x_eov: Number(currX.toFixed(2)), y_eov: Number(yMax.toFixed(2)), altitude: altitude, gimbalPitch: -90.0, action: "TAKE_PHOTO" });
+            }
+
+            calculatedGCPs = currentPolygonEOV.map((pt, i) => ({
+                ID: `GCP_${i+1}`, X: pt.X, Y: pt.Y, Z: 100.0
+            }));
+
+            document.getElementById('output_text').innerHTML = `
+                • <b>GSD felbontás:</b> ${gsdCm.toFixed(2)} cm/px<br>
+                • <b>Sorköz:</b> ${rowSpacing.toFixed(2)} m | <b>Max sebesség:</b> ${maxSpeed.toFixed(2)} m/s<br>
+                • <b>Waypointok:</b> ${calculatedWaypoints.length} db | <b>GCP-k:</b> ${calculatedGCPs.length} db
+            `;
+            document.getElementById('result_card').style.display = 'block';
+        }
+
+        function downloadFile(content, fileName, contentType) {
+            let a = document.createElement("a");
+            let file = new Blob([content], {type: contentType});
+            a.href = URL.createObjectURL(file);
+            a.download = fileName;
+            a.click();
+        }
+
+        function downloadJSON() {
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let mission = {
+                missionName: "Potensic_Map_Polygon",
+                droneType: "Potensic Atom 2",
+                defaultAltitude: altitude,
+                totalWaypoints: calculatedWaypoints.length,
+                waypoints: calculatedWaypoints
+            };
+            downloadFile(JSON.stringify(mission, null, 4), "potensic_mission.json", "application/json");
+        }
+
+        function downloadGCP() {
+            let gcpText = "EPSG:23700\n";
+            calculatedGCPs.forEach(gcp => {
+                gcpText += `${gcp.X.toFixed(2)} ${gcp.Y.toFixed(2)} ${gcp.Z.toFixed(2)} 0 0 0 ${gcp.ID}\n`;
+            });
+            downloadFile(gcpText, "gcp_eov.txt", "text/plain");
+        }
+    </script>
+</body>
+</html>
