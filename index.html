@@ -2,22 +2,302 @@
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Térkép Teszt</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Potensic Atom 2 - EOV Tervező</title>
+    <!-- Leaflet & Leaflet Draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; width: 100%; }
-        #map { width: 100%; height: 100%; }
+        * { box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #111;
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        /* Lebegő panel */
+        .floating-panel {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(5px);
+            padding: 10px 14px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            width: calc(100% - 20px);
+            max-width: 420px;
+            transition: all 0.3s ease;
+        }
+
+        /* Összecsukott állapot osztálya */
+        .floating-panel.hidden {
+            display: none;
+        }
+
+        /* Panel behúzó / nyitó gomb a térképen */
+        .toggle-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            z-index: 1001;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+        }
+
+        .panel-title {
+            font-size: 13px;
+            font-weight: 800;
+            color: #1e293b;
+            margin: 0;
+        }
+
+        .btn-close-panel {
+            background: #f1f5f9;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-weight: bold;
+            color: #64748b;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .panel-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .panel-field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-field label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #4a5568;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+
+        .panel-field input, .panel-field select {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #2d3748;
+            background: #f8fafc;
+        }
+
+        .angle-control {
+            margin-bottom: 8px;
+        }
+
+        .angle-header label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #4a5568;
+            text-transform: uppercase;
+        }
+
+        .angle-slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .angle-slider-container input[type="range"] {
+            flex-grow: 1;
+            height: 5px;
+            accent-color: #2563eb;
+        }
+
+        .angle-slider-container input[type="number"] {
+            width: 55px;
+            padding: 4px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 12px;
+            text-align: center;
+            font-weight: 700;
+        }
+
+        .btn-action {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .btn-optimize {
+            background: #059669;
+        }
+
+        /* Modal ablak */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.7);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+
+        .modal-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            width: 100%;
+            max-width: 390px;
+            box-shadow: 0 20px 25px rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #1e293b;
+            margin: 0;
+        }
+
+        .modal-close {
+            background: #f1f5f9;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            font-weight: bold;
+            color: #64748b;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .results-box {
+            background: #f0f9ff;
+            border-left: 4px solid #0284c7;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #0369a1;
+            margin-bottom: 16px;
+        }
+
+        .btn-download {
+            width: 100%;
+            padding: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+
+        .btn-drone { background: #0284c7; color: white; }
+        .btn-gcp { background: #475569; color: white; }
     </style>
 </head>
 <body>
+
+    <!-- Térkép -->
     <div id="map"></div>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        var map = L.map('map').setView([48.25, 20.62], 13);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            maxZoom: 19
-        }).addTo(map);
-    </script>
-</body>
-</html>
+
+    <!-- Panel nyitó gomb (ha be van csukva) -->
+    <button class="toggle-btn" id="togglePanelBtn" onclick="togglePanel()">⚙️ Tervező Panel</button>
+
+    <!-- Lebegő panel -->
+    <div class="floating-panel" id="controlPanel">
+        <div class="panel-header">
+            <h3 class="panel-title">Potensic EOV Tervező</h3>
+            <button class="btn-close-panel" onclick="togglePanel()">&times;</button>
+        </div>
+
+        <div class="panel-grid">
+            <div class="panel-field">
+                <label for="mission_type">Küldetés</label>
+                <select id="mission_type" onchange="onMissionTypeChange()">
+                    <option value="2D">2D Topográfia</option>
+                    <option value="3D">3D Rácshálós</option>
+                </select>
+            </div>
+            <div class="panel-field">
+                <label for="altitude">Magasság (m)</label>
+                <input type="number" id="altitude" value="40" step="1" onchange="recalculateIfPolygonExists()">
+            </div>
+        </div>
+
+        <div class="panel-grid">
+            <div class="panel-field">
+                <label for="gimbal_pitch">Kamera szög (°)</label>
+                <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5" onchange="recalculateIfPolygonExists()">
+            </div>
+            <div class="panel-field" style="justify-content: flex-end;">
+                <button class="btn-action btn-optimize" onclick="optimizeAngle()">Optimalizálás</button>
+            </div>
+        </div>
+
+        <div class="angle-control">
+            <div class="angle-header">
+                <label for="rotation_angle">Útvonal Elforgatás (°)</label>
+            </div>
+            <div class="angle-slider-container">
+                <input type="range" id="rotation_slider" min="0" max="355" step="5" value="0" oninput="updateRotationFromSlider(this.value)">
+                <input type="number" id="rotation_angle" min="0" max="355" step="5" value="0" onchange="updateRotationFromInput(this.value
