@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Potensic Atom 2 - Tervező</title>
-    <!-- Leaflet CSS -->
+    <!-- Leaflet & Leaflet Draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     
@@ -16,7 +16,7 @@
             margin: 0;
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background: #cbd5e1;
+            background: #000;
             overflow: hidden;
         }
 
@@ -60,6 +60,7 @@
             max-width: 420px;
             max-height: calc(100vh - 85px);
             overflow-y: auto;
+            transition: opacity 0.2s ease;
         }
 
         .floating-panel.hidden {
@@ -320,4 +321,491 @@
         <div class="panel-grid" id="orbit_params" style="display: none;">
             <div class="panel-field">
                 <label for="orbit_radius" id="lbl_radius">Sugár (m)</label>
-                <input type="number" id="orbit_radius" value="25" min="5" max="200" step="1"
+                <input type="number" id="orbit_radius" value="25" min="5" max="200" step="1" onchange="recalculateIfPolygonExists()">
+            </div>
+            <div class="panel-field">
+                <label for="orbit_points" id="lbl_points">Fotópontok</label>
+                <input type="number" id="orbit_points" value="16" min="6" max="36" step="2" onchange="recalculateIfPolygonExists()">
+            </div>
+        </div>
+
+        <div class="angle-control" id="rotation_container">
+            <div class="angle-header">
+                <label for="rotation_angle" id="lbl_rot">Útvonal Elforgatás (°)</label>
+            </div>
+            <div class="angle-slider-container">
+                <input type="range" id="rotation_slider" min="0" max="355" step="5" value="0" oninput="updateRotationFromSlider(this.value)">
+                <input type="number" id="rotation_angle" min="0" max="355" step="5" value="0" onchange="updateRotationFromInput(this.value)">
+            </div>
+        </div>
+
+        <div class="panel-grid" id="offset_container">
+            <div class="panel-field">
+                <label for="offset_x" id="lbl_offx">Eltolás X (m)</label>
+                <input type="number" id="offset_x" value="0" step="1" onchange="recalculateIfPolygonExists()">
+            </div>
+            <div class="panel-field">
+                <label for="offset_y" id="lbl_offy">Eltolás Y (m)</label>
+                <input type="number" id="offset_y" value="0" step="1" onchange="recalculateIfPolygonExists()">
+            </div>
+        </div>
+
+        <button class="btn-action" style="margin-top: 4px;" id="btn_details" onclick="showResultsModal()">Részletek & Letöltés</button>
+    </div>
+
+    <div class="modal-overlay" id="resultModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 class="modal-title" id="lbl_modal_title">Repülési Adatok</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="results-box" id="output_text"></div>
+            <button class="btn-download btn-drone" id="btn_dl_drone" onclick="downloadJSON()">Drón JSON (WGS84) Letöltése</button>
+            <button class="btn-download btn-gcp" id="btn_dl_gcp" onclick="downloadGCP()">WebODM GCP (EPSG:23700) Letöltése</button>
+        </div>
+    </div>
+
+    <!-- Leaflet, Draw & Proj4 JS könyvtárak -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+
+    <script>
+        const dict = {
+            hu: {
+                toggleBtn: "⚙️ Tervező Panel",
+                title: "Potensic Tervező",
+                mission: "Küldetés",
+                opt2d: "2D Topográfia",
+                opt3d: "3D Rácshálós",
+                optOrbit: "Épület körbejárás (Orbit)",
+                alt: "Magasság (m)",
+                pitch: "Kamera szög (°)",
+                speed: "Sebesség (m/s)",
+                optimize: "Optimalizálás (Legrövidebb útvonal)",
+                radius: "Sugár (m)",
+                points: "Fotópontok",
+                rot: "Útvonal Elforgatás (°)",
+                offx: "Eltolás X (m)",
+                offy: "Eltolás Y (m)",
+                details: "Részletek & Letöltés",
+                modalTitle: "Repülési Adatok",
+                dlDrone: "Drón JSON (WGS84) Letöltése",
+                dlGcp: "WebODM GCP (EPSG:23700) Letöltése",
+                alertDraw: "Előbb rajzolj ki egy területet a térképen!",
+                mode2d: "2D Topográfia",
+                mode3d: "3D Rácshálós",
+                modeOrbit: "Épület körbejárás (Orbit)",
+                length: "Útvonal hossza",
+                time: "Repülési idő",
+                photos: "Fotópontok száma"
+            },
+            en: {
+                toggleBtn: "⚙️ Planner Panel",
+                title: "Potensic Planner",
+                mission: "Mission",
+                opt2d: "2D Topography",
+                opt3d: "3D Cross-Grid",
+                optOrbit: "Building Orbit",
+                alt: "Altitude (m)",
+                pitch: "Gimbal Pitch (°)",
+                speed: "Speed (m/s)",
+                optimize: "Optimize (Shortest Route)",
+                radius: "Radius (m)",
+                points: "Photo Points",
+                rot: "Route Rotation (°)",
+                offx: "Offset X (m)",
+                offy: "Offset Y (m)",
+                details: "Details & Download",
+                modalTitle: "Flight Data",
+                dlDrone: "Download Drone JSON (WGS84)",
+                dlGcp: "Download WebODM GCP (EPSG:23700)",
+                alertDraw: "Please draw an area on the map first!",
+                mode2d: "2D Topography",
+                mode3d: "3D Cross-Grid",
+                modeOrbit: "Building Orbit",
+                length: "Route Length",
+                time: "Flight Time",
+                photos: "Photo Points"
+            }
+        };
+
+        let currentLang = 'hu';
+
+        function changeLanguage(lang) {
+            currentLang = lang;
+            let t = dict[lang];
+            document.getElementById('togglePanelBtn').innerText = t.toggleBtn;
+            document.getElementById('lbl_title').innerText = t.title;
+            document.getElementById('lbl_mission').innerText = t.mission;
+            document.getElementById('opt_2d').innerText = t.opt2d;
+            document.getElementById('opt_3d').innerText = t.opt3d;
+            document.getElementById('opt_orbit').innerText = t.optOrbit;
+            document.getElementById('lbl_alt').innerText = t.alt;
+            document.getElementById('lbl_pitch').innerText = t.pitch;
+            document.getElementById('lbl_speed').innerText = t.speed;
+            document.getElementById('btn_optimize').innerText = t.optimize;
+            document.getElementById('lbl_radius').innerText = t.radius;
+            document.getElementById('lbl_points').innerText = t.points;
+            document.getElementById('lbl_rot').innerText = t.rot;
+            document.getElementById('lbl_offx').innerText = t.offx;
+            document.getElementById('lbl_offy').innerText = t.offy;
+            document.getElementById('btn_details').innerText = t.details;
+            document.getElementById('lbl_modal_title').innerText = t.modalTitle;
+            document.getElementById('btn_dl_drone').innerText = t.dlDrone;
+            document.getElementById('btn_dl_gcp').innerText = t.dlGcp;
+
+            recalculateIfPolygonExists();
+        }
+
+        proj4.defs("EPSG:23700", "+proj=somerc +lat_0=47.14439372222222 +lon_0=19.04857177777778 +k_0=0.99993 +x_0=650000 +y_0=200000 +ellps=GRS67 +units=m +no_defs");
+
+        var map = L.map('map', { zoomControl: false }).setView([48.25, 20.62], 13);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        var tileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        setTimeout(function() { map.invalidateSize(); }, 200);
+
+        var drawnItems = new L.FeatureGroup();
+        var flightPathGroup = new L.FeatureGroup().addTo(map);
+        map.addLayer(drawnItems);
+
+        var drawControl = new L.Control.Draw({
+            position: 'topleft',
+            edit: { featureGroup: drawnItems },
+            draw: {
+                polygon: true,
+                rectangle: true,
+                polyline: false,
+                circle: false,
+                marker: false,
+                circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+
+        let currentPolygonLatLngs = [];
+        let calculatedWaypointsWGS84 = [];
+        let polygonCenterWGS84 = { lat: 0, lng: 0 };
+
+        L.DomEvent.disableClickPropagation(document.getElementById('controlPanel'));
+        L.DomEvent.disableClickPropagation(document.getElementById('togglePanelBtn'));
+
+        function togglePanel() {
+            let panel = document.getElementById('controlPanel');
+            panel.classList.toggle('hidden');
+        }
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            drawnItems.clearLayers();
+            flightPathGroup.clearLayers();
+            var layer = e.layer;
+            drawnItems.addLayer(layer);
+
+            currentPolygonLatLngs = layer.getLatLngs()[0];
+
+            let sumLat = 0, sumLng = 0;
+            currentPolygonLatLngs.forEach(p => { sumLat += p.lat; sumLng += p.lng; });
+            polygonCenterWGS84 = { lat: sumLat / currentPolygonLatLngs.length, lng: sumLng / currentPolygonLatLngs.length };
+
+            calculateFromPolygon();
+        });
+
+        function onMissionTypeChange() {
+            let mType = document.getElementById('mission_type').value;
+            let pitchInput = document.getElementById('gimbal_pitch');
+            let orbitParams = document.getElementById('orbit_params');
+            let rotContainer = document.getElementById('rotation_container');
+            let offsetContainer = document.getElementById('offset_container');
+            let optContainer = document.getElementById('optimize_container');
+
+            if (mType === 'ORBIT') {
+                orbitParams.style.display = 'grid';
+                rotContainer.style.display = 'none';
+                offsetContainer.style.display = 'none';
+                optContainer.style.display = 'none';
+                if (pitchInput.value === '-90' || pitchInput.value === '-60') {
+                    pitchInput.value = '-45';
+                }
+            } else {
+                orbitParams.style.display = 'none';
+                rotContainer.style.display = 'block';
+                offsetContainer.style.display = 'grid';
+                optContainer.style.display = 'grid';
+                if (mType === '3D') pitchInput.value = '-60';
+                if (mType === '2D') pitchInput.value = '-90';
+            }
+            recalculateIfPolygonExists();
+        }
+
+        function updateRotationFromSlider(val) {
+            document.getElementById('rotation_angle').value = val;
+            calculateFromPolygon();
+        }
+
+        function updateRotationFromInput(val) {
+            document.getElementById('rotation_slider').value = val;
+            calculateFromPolygon();
+        }
+
+        function recalculateIfPolygonExists() {
+            if (currentPolygonLatLngs.length >= 3) {
+                calculateFromPolygon();
+            }
+        }
+
+        function rotateWGS84Point(pt, center, angleRad) {
+            let cos = Math.cos(angleRad);
+            let sin = Math.sin(angleRad);
+            let dLng = (pt.lng - center.lng) * 111320 * Math.cos(center.lat * Math.PI / 180);
+            let dLat = (pt.lat - center.lat) * 110574;
+            let rotDLng = dLng * cos - dLat * sin;
+            let rotDLat = dLng * sin + dLat * cos;
+            return {
+                lat: center.lat + (rotDLat / 110574),
+                lng: center.lng + (rotDLng / (111320 * Math.cos(center.lat * Math.PI / 180)))
+            };
+        }
+
+        function generateOrbitWaypoints(center, radiusM, pointsCount, altitude, pitch, speed) {
+            let waypoints = [];
+            for (let i = 0; i < pointsCount; i++) {
+                let angle = (i / pointsCount) * 2 * Math.PI;
+                let dLng = (radiusM * Math.cos(angle)) / (111320 * Math.cos(center.lat * Math.PI / 180));
+                let dLat = (radiusM * Math.sin(angle)) / 110574;
+
+                waypoints.push({
+                    latitude: Number((center.lat + dLat).toFixed(7)),
+                    longitude: Number((center.lng + dLng).toFixed(7)),
+                    altitude: altitude,
+                    gimbalPitch: pitch,
+                    speedMs: speed,
+                    action: "TAKE_PHOTO"
+                });
+            }
+            if (waypoints.length > 0) {
+                waypoints.push({...waypoints[0]});
+            }
+            return waypoints;
+        }
+
+        function generatePassWaypoints(polygonLatLngs, center, angleDeg, altitude, pitch, speed, offsetX, offsetY) {
+            let angleRad = angleDeg * (Math.PI / 180);
+            let rotatedPoly = polygonLatLngs.map(pt => rotateWGS84Point(pt, center, -angleRad));
+
+            let fovRad = 79.4 * (Math.PI / 180);
+            let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
+            let groundHeight = groundWidth * (3.0 / 4.0); // 4:3 képarány
+
+            let rowSpacing = groundWidth * (1.0 - 0.70); // 70% oldalátfedés
+            let photoDistance = groundHeight * (1.0 - 0.80); // 80% előrefedés
+
+            let lats = rotatedPoly.map(p => (p.lat - center.lat) * 110574);
+            let lngs = rotatedPoly.map(p => (p.lng - center.lng) * 111320 * Math.cos(center.lat * Math.PI / 180));
+
+            let minX = Math.min(...lats), maxX = Math.max(...lats);
+            let minY = Math.min(...lngs), maxY = Math.max(...lngs);
+
+            let heightM = maxX - minX;
+            let rows = Math.max(1, Math.floor(heightM / rowSpacing));
+
+            let waypointsRotated = [];
+            for (let r = 0; r <= rows; r++) {
+                let currX = minX + (r * rowSpacing);
+                let yStart = (r % 2 === 0) ? minY : maxY;
+                let yEnd = (r % 2 === 0) ? maxY : minY;
+
+                let lineLength = Math.abs(yEnd - yStart);
+                let steps = Math.max(1, Math.round(lineLength / photoDistance));
+
+                // Sűrű waypoint generálás a sáv mentén az előrefedéshez
+                for (let s = 0; s <= steps; s++) {
+                    let fraction = s / steps;
+                    let currY = yStart + (yEnd - yStart) * fraction;
+                    waypointsRotated.push({ xM: currX, yM: currY });
+                }
+            }
+
+            return waypointsRotated.map(pt => {
+                let tempPt = {
+                    lat: center.lat + ((pt.xM + offsetX) / 110574),
+                    lng: center.lng + ((pt.yM + offsetY) / (111320 * Math.cos(center.lat * Math.PI / 180)))
+                };
+                let worldPt = rotateWGS84Point(tempPt, center, angleRad);
+                return {
+                    latitude: Number(worldPt.lat.toFixed(7)),
+                    longitude: Number(worldPt.lng.toFixed(7)),
+                    altitude: altitude,
+                    gimbalPitch: pitch,
+                    speedMs: speed,
+                    action: "TAKE_PHOTO"
+                };
+            });
+        }
+
+        function calculateFromPolygon() {
+            if (currentPolygonLatLngs.length < 3) return;
+
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
+            let speed = parseFloat(document.getElementById('drone_speed').value) || 3.0;
+            let missionType = document.getElementById('mission_type').value;
+            let t = dict[currentLang];
+
+            calculatedWaypointsWGS84 = [];
+
+            if (missionType === 'ORBIT') {
+                let radius = parseFloat(document.getElementById('orbit_radius').value) || 25;
+                let points = parseInt(document.getElementById('orbit_points').value) || 16;
+                let orbitWps = generateOrbitWaypoints(polygonCenterWGS84, radius, points, altitude, pitch, speed);
+                orbitWps.forEach((wp, idx) => {
+                    calculatedWaypointsWGS84.push({ index: idx + 1, ...wp });
+                });
+            } else {
+                let angleDeg = parseFloat(document.getElementById('rotation_angle').value) || 0;
+                let offsetX = parseFloat(document.getElementById('offset_x').value) || 0;
+                let offsetY = parseFloat(document.getElementById('offset_y').value) || 0;
+
+                let pass1Waypoints = generatePassWaypoints(currentPolygonLatLngs, polygonCenterWGS84, angleDeg, altitude, pitch, speed, offsetX, offsetY);
+                let index = 1;
+                pass1Waypoints.forEach(wp => {
+                    calculatedWaypointsWGS84.push({ index: index++, ...wp });
+                });
+
+                if (missionType === '3D') {
+                    let pass2Waypoints = generatePassWaypoints(currentPolygonLatLngs, polygonCenterWGS84, angleDeg + 90, altitude, pitch, speed, offsetX, offsetY);
+                    pass2Waypoints.forEach(wp => {
+                        calculatedWaypointsWGS84.push({ index: index++, ...wp });
+                    });
+                }
+            }
+
+            let totalDistanceMeters = 0;
+            for (let i = 0; i < calculatedWaypointsWGS84.length - 1; i++) {
+                let wp1 = calculatedWaypointsWGS84[i];
+                let wp2 = calculatedWaypointsWGS84[i + 1];
+                let dLat = (wp2.latitude - wp1.latitude) * 110574;
+                let dLng = (wp2.longitude - wp1.longitude) * 111320 * Math.cos(polygonCenterWGS84.lat * Math.PI / 180);
+                totalDistanceMeters += Math.sqrt(dLat * dLat + dLng * dLng);
+            }
+
+            let flightTimeSeconds = (totalDistanceMeters / speed) + (calculatedWaypointsWGS84.length * 1.5) + 20;
+            let flightTimeMin = Math.floor(flightTimeSeconds / 60);
+            let flightTimeSec = Math.round(flightTimeSeconds % 60);
+
+            let distanceFormatted = totalDistanceMeters >= 1000 
+                ? `${(totalDistanceMeters / 1000).toFixed(2)} km` 
+                : `${Math.round(totalDistanceMeters)} m`;
+
+            flightPathGroup.clearLayers();
+            let leafletFlightCoords = calculatedWaypointsWGS84.map(wp => [wp.latitude, wp.longitude]);
+
+            let pathColor = (missionType === '3D') ? '#2563eb' : (missionType === 'ORBIT' ? '#9333ea' : '#ef4444');
+
+            L.polyline(leafletFlightCoords, { color: pathColor, weight: 4, opacity: 0.9 }).addTo(flightPathGroup);
+            
+            // Sűrű pontok jelölése a térképen
+            leafletFlightCoords.forEach((coord, i) => {
+                L.circleMarker(coord, {
+                    radius: 3, fillColor: pathColor, color: "#ffffff", weight: 1, opacity: 0.9, fillOpacity: 0.8
+                }).bindTooltip(`WP ${i+1}`).addTo(flightPathGroup);
+            });
+
+            let modeName = missionType === '3D' ? t.mode3d : (missionType === 'ORBIT' ? t.modeOrbit : t.mode2d);
+            document.getElementById('output_text').innerHTML = `
+                • <b>${t.mission}:</b> ${modeName}<br>
+                • <b>${t.length}:</b> ${distanceFormatted}<br>
+                • <b>${t.time}:</b> ${flightTimeMin} min ${flightTimeSec} sec<br>
+                • <b>${t.photos}:</b> ${calculatedWaypointsWGS84.length} pcs<br>
+                • <b>Speed:</b> ${speed} m/s
+            `;
+        }
+
+        function optimizeAngle() {
+            if (currentPolygonLatLngs.length < 3) {
+                alert(dict[currentLang].alertDraw);
+                return;
+            }
+            let altitude = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
+            let speed = parseFloat(document.getElementById('drone_speed').value) || 3.0;
+            let offsetX = parseFloat(document.getElementById('offset_x').value) || 0;
+            let offsetY = parseFloat(document.getElementById('offset_y').value) || 0;
+            
+            let bestAngle = 0;
+            let minDistance = Infinity;
+
+            for (let angle = 0; angle < 180; angle += 5) {
+                let wps = generatePassWaypoints(currentPolygonLatLngs, polygonCenterWGS84, angle, altitude, pitch, speed, offsetX, offsetY);
+                let dist = 0;
+                for (let i = 0; i < wps.length - 1; i++) {
+                    let dLat = (wps[i+1].latitude - wps[i].latitude) * 110574;
+                    let dLng = (wps[i+1].longitude - wps[i].longitude) * 111320 * Math.cos(polygonCenterWGS84.lat * Math.PI / 180);
+                    dist += Math.sqrt(dLat * dLat + dLng * dLng);
+                }
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestAngle = angle;
+                }
+            }
+
+            document.getElementById('rotation_angle').value = bestAngle;
+            document.getElementById('rotation_slider').value = bestAngle;
+            calculateFromPolygon();
+        }
+
+        function showResultsModal() {
+            if (currentPolygonLatLngs.length < 3) {
+                alert(dict[currentLang].alertDraw);
+                return;
+            }
+            document.getElementById('resultModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('resultModal').style.display = 'none';
+        }
+
+        function downloadFile(content, fileName, contentType) {
+            let a = document.createElement("a");
+            let file = new Blob([content], {type: contentType});
+            a.href = URL.createObjectURL(file);
+            a.download = fileName;
+            a.click();
+        }
+
+        function downloadJSON() {
+            let altVal = parseFloat(document.getElementById('altitude').value) || 40;
+            let pitch = parseFloat(document.getElementById('gimbal_pitch').value) || -90;
+            let speed = parseFloat(document.getElementById('drone_speed').value) || 3.0;
+            let missionType = document.getElementById('mission_type').value;
+
+            let mission = {
+                missionName: `Potensic_${missionType}_Mission`,
+                droneType: "Potensic Atom 2",
+                missionType: missionType,
+                defaultAltitude: altVal,
+                defaultGimbalPitch: pitch,
+                defaultSpeedMs: speed,
+                totalWaypoints: calculatedWaypointsWGS84.length,
+                waypoints: calculatedWaypointsWGS84
+            };
+            
+            downloadFile(JSON.stringify(mission, null, 4), `potensic_mission_${missionType.toLowerCase()}.json`, "application/json");
+        }
+
+        function downloadGCP() {
+            let gcpText = "EPSG:23700\n";
+            currentPolygonLatLngs.forEach((pt, i) => {
+                let eovCoord = proj4("EPSG:4326", "EPSG:23700", [pt.lng, pt.lat]);
+                gcpText += `${eovCoord[1].toFixed(2)} ${eovCoord[0].toFixed(2)} 100.00 0 0 0 GCP_${i+1}\n`;
+            });
+            downloadFile(gcpText, "gcp_eov.txt", "text/plain");
+        }
+    </script>
+</body>
+</html>
