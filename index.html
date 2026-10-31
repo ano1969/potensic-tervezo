@@ -339,17 +339,6 @@
             </div>
         </div>
 
-        <div class="panel-grid" id="offset_container">
-            <div class="panel-field">
-                <label for="offset_x" id="lbl_offx">Eltolás X (m)</label>
-                <input type="number" id="offset_x" value="0" step="1" onchange="recalculateIfPolygonExists()">
-            </div>
-            <div class="panel-field">
-                <label for="offset_y" id="lbl_offy">Eltolás Y (m)</label>
-                <input type="number" id="offset_y" value="0" step="1" onchange="recalculateIfPolygonExists()">
-            </div>
-        </div>
-
         <button class="btn-action" style="margin-top: 4px;" id="btn_details" onclick="showResultsModal()">Részletek & Letöltés</button>
     </div>
 
@@ -386,8 +375,6 @@
                 radius: "Sugár (m)",
                 points: "Fotópontok",
                 rot: "Útvonal Elforgatás (°)",
-                offx: "Eltolás X (m)",
-                offy: "Eltolás Y (m)",
                 details: "Részletek & Letöltés",
                 modalTitle: "Repülési Adatok",
                 dlDrone: "Drón JSON (WGS84) Letöltése",
@@ -414,8 +401,6 @@
                 radius: "Radius (m)",
                 points: "Photo Points",
                 rot: "Route Rotation (°)",
-                offx: "Offset X (m)",
-                offy: "Offset Y (m)",
                 details: "Details & Download",
                 modalTitle: "Flight Data",
                 dlDrone: "Download Drone JSON (WGS84)",
@@ -448,8 +433,6 @@
             document.getElementById('lbl_radius').innerText = t.radius;
             document.getElementById('lbl_points').innerText = t.points;
             document.getElementById('lbl_rot').innerText = t.rot;
-            document.getElementById('lbl_offx').innerText = t.offx;
-            document.getElementById('lbl_offy').innerText = t.offy;
             document.getElementById('btn_details').innerText = t.details;
             document.getElementById('lbl_modal_title').innerText = t.modalTitle;
             document.getElementById('btn_dl_drone').innerText = t.dlDrone;
@@ -490,7 +473,9 @@
 
         let currentPolygonLatLngs = [];
         let calculatedWaypointsWGS84 = [];
-        let polygonCenterWGS84 = { lat: 0, lng: 0 };
+        let originalCenterWGS84 = { lat: 0, lng: 0 };
+        let activeCenterWGS84 = { lat: 0, lng: 0 };
+        let centerMarker = null;
 
         L.DomEvent.disableClickPropagation(document.getElementById('controlPanel'));
         L.DomEvent.disableClickPropagation(document.getElementById('togglePanelBtn'));
@@ -503,6 +488,8 @@
         map.on(L.Draw.Event.CREATED, function (e) {
             drawnItems.clearLayers();
             flightPathGroup.clearLayers();
+            if (centerMarker) map.removeLayer(centerMarker);
+
             var layer = e.layer;
             drawnItems.addLayer(layer);
 
@@ -510,7 +497,25 @@
 
             let sumLat = 0, sumLng = 0;
             currentPolygonLatLngs.forEach(p => { sumLat += p.lat; sumLng += p.lng; });
-            polygonCenterWGS84 = { lat: sumLat / currentPolygonLatLngs.length, lng: sumLng / currentPolygonLatLngs.length };
+            originalCenterWGS84 = { lat: sumLat / currentPolygonLatLngs.length, lng: sumLng / currentPolygonLatLngs.length };
+            activeCenterWGS84 = { lat: originalCenterWGS84.lat, lng: originalCenterWGS84.lng };
+
+            // Húzható középponti marker létrehozása
+            centerMarker = L.marker([activeCenterWGS84.lat, activeCenterWGS84.lng], {
+                draggable: true,
+                icon: L.divIcon({
+                    className: 'custom-drag-icon',
+                    html: '<div style="background: #f97316; width: 22px; height: 22px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 8px rgba(0,0,0,0.5); cursor: move;"></div>',
+                    iconSize: [22, 22],
+                    iconAnchor: [11, 11]
+                })
+            }).addTo(map);
+
+            centerMarker.on('drag', function(evt) {
+                let newPos = evt.target.getLatLng();
+                activeCenterWGS84 = { lat: newPos.lat, lng: newPos.lng };
+                calculateFromPolygon();
+            });
 
             calculateFromPolygon();
         });
@@ -520,13 +525,11 @@
             let pitchInput = document.getElementById('gimbal_pitch');
             let orbitParams = document.getElementById('orbit_params');
             let rotContainer = document.getElementById('rotation_container');
-            let offsetContainer = document.getElementById('offset_container');
             let optContainer = document.getElementById('optimize_container');
 
             if (mType === 'ORBIT') {
                 orbitParams.style.display = 'grid';
                 rotContainer.style.display = 'none';
-                offsetContainer.style.display = 'none';
                 optContainer.style.display = 'none';
                 if (pitchInput.value === '-90' || pitchInput.value === '-60') {
                     pitchInput.value = '-45';
@@ -534,7 +537,6 @@
             } else {
                 orbitParams.style.display = 'none';
                 rotContainer.style.display = 'block';
-                offsetContainer.style.display = 'grid';
                 optContainer.style.display = 'grid';
                 if (mType === '3D') pitchInput.value = '-60';
                 if (mType === '2D') pitchInput.value = '-90';
@@ -593,16 +595,33 @@
             return waypoints;
         }
 
-        function generatePassWaypoints(polygonLatLngs, center, angleDeg, altitude, pitch, speed, offsetX, offsetY) {
+        function generatePassWaypoints(polygonLatLngs, center, angleDeg, altitude, pitch, speed) {
             let angleRad = angleDeg * (Math.PI / 180);
             let rotatedPoly = polygonLatLngs.map(pt => rotateWGS84Point(pt, center, -angleRad));
 
             let fovRad = 79.4 * (Math.PI / 180);
             let groundWidth = 2 * altitude * Math.tan(fovRad / 2);
-            let groundHeight = groundWidth * (3.0 / 4.0); // 4:3 képarány
+            let groundHeight = groundWidth * (3.0 / 4.0);
 
-            let rowSpacing = groundWidth * (1.0 - 0.70); // 70% oldalátfedés
-            let photoDistance = groundHeight * (1.0 - 0.80); // 80% előrefedés
+            let rowSpacing = groundWidth * (1.0 - 0.70);
+            let photoDistance = groundHeight * (1.0 - 0.80);
 
             let lats = rotatedPoly.map(p => (p.lat - center.lat) * 110574);
-            let lngs = rotatedPoly.map(p => (p.lng - center.lng) * 111320 * Math.cos(center.lat
+            let lngs = rotatedPoly.map(p => (p.lng - center.lng) * 111320 * Math.cos(center.lat * Math.PI / 180));
+
+            let minX = Math.min(...lats), maxX = Math.max(...lats);
+            let minY = Math.min(...lngs), maxY = Math.max(...lngs);
+
+            let heightM = maxX - minX;
+            let rows = Math.max(1, Math.floor(heightM / rowSpacing));
+
+            let waypointsRotated = [];
+            for (let r = 0; r <= rows; r++) {
+                let currX = minX + (r * rowSpacing);
+                let yStart = (r % 2 === 0) ? minY : maxY;
+                let yEnd = (r % 2 === 0) ? maxY : minY;
+
+                let lineLength = Math.abs(yEnd - yStart);
+                let steps = Math.max(1, Math.round(lineLength / photoDistance));
+
+                for (let s = 0; s <= steps;
