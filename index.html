@@ -16,7 +16,7 @@
             margin: 0;
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background: #1e293b;
+            background: #cbd5e1;
             overflow: hidden;
         }
 
@@ -284,4 +284,40 @@
                     <option value="en">EN</option>
                 </select>
             </div>
-            <button class="btn-close-panel" onclick="togglePanel()">&times;</button
+            <button class="btn-close-panel" onclick="togglePanel()">&times;</button>
+        </div>
+
+        <div class="panel-grid">
+            <div class="panel-field">
+                <label for="mission_type" id="lbl_mission">Küldetés</label>
+                <select id="mission_type" onchange="onMissionTypeChange()">
+                    <option value="2D" id="opt_2d">2D Topográfia</option>
+                    <option value="3D" id="opt_3d">3D Rácshálós</option>
+                    <option value="ORBIT" id="opt_orbit">Épület körbejárás (Orbit)</option>
+                </select>
+            </div>
+            <div class="panel-field">
+                <label for="altitude" id="lbl_alt">Magasság (m)</label>
+                <input type="number" id="altitude" value="40" step="1" onchange="recalculateIfPolygonExists()">
+            </div>
+        </div>
+
+        <div class="panel-grid">
+            <div class="panel-field">
+                <label for="gimbal_pitch" id="lbl_pitch">Kamera szög (°)</label>
+                <input type="number" id="gimbal_pitch" value="-90" min="-90" max="0" step="5" onchange="recalculateIfPolygonExists()">
+            </div>
+            <div class="panel-field">
+                <label for="drone_speed" id="lbl_speed">Sebesség (m/s)</label>
+                <input type="number" id="drone_speed" value="3.0" min="1.0" max="10.0" step="0.5" onchange="recalculateIfPolygonExists()">
+            </div>
+        </div>
+
+        <div class="panel-grid" style="grid-template-columns: 1fr;" id="optimize_container">
+            <button class="btn-action btn-optimize" id="btn_optimize" onclick="optimizeAngle()">Optimalizálás (Legrövidebb útvonal)</button>
+        </div>
+
+        <div class="panel-grid" id="orbit_params" style="display: none;">
+            <div class="panel-field">
+                <label for="orbit_radius" id="lbl_radius">Sugár (m)</label>
+                <input type="number" id="orbit_radius" value="25" min="5" max="200" step="1"
